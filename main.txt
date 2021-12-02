@@ -1,0 +1,1623 @@
+    //>>>  TicTacToe - MBED >>>
+/*>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+    File Name:  GMSwork.c
+    Author:     GMuraleedharan
+    Date:       9/12/2020
+    Modified:   Name or None
+    
+
+    Description: *** Designing of tic-tac-toe program which makes a communication sentence to be communicated and responds to the incoming commands from a remote controller***
+      
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>*/
+
+// Preprocessor >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+#include "mbed.h"
+// Libraries >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+#include <Timer.h>
+#include <string.h>
+
+Serial pc(USBTX,USBRX,9600);
+Serial pic(p13,p14,19200);  //Initializing for serial communication
+DigitalIn pb1(p23);         //Push button for decrementing
+DigitalIn pb2(p25);         //Push button for incrementing
+DigitalIn pb3(p28);         //Push button for enter
+DigitalIn pb4(p30);         //Push button for mode
+Timer timer;                //Timer for display timing
+
+// Constants >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+#define TRUE    1
+#define FALSE   0   
+#define ROW     3                   //Row size of the tictactoe array
+#define COLUMN  3                   //Column size of the tictactoe array
+#define SIZE    3                   //Size of the address
+#define TIME    2                   //Size of game timer array
+#define TURNS   10                  //Total number of turns for the player
+
+#define INCREMENT 0xB0              //Increment button press configuration
+#define DECREMENT 0x70               //decrement button press configuration
+#define ENTER 0xD0                  //Enter button press configuration
+#define MODE 0xE0                    //Mode button press configuration
+#define SEC 1               
+#define MIN 0
+#define ENTERMODE 0xC0               //Enter and mode press configuration
+
+#define CONTROLLERADDRESS 1           //Address of the remote controller to sent the communication sentence
+#define ADDRESS  198                  //Address of the sender of communication sentence
+#define BUFSIZE 50                    //Size of the array to store the communication sentence
+#define BUFFSIZE 50                   //Size of the array to store the sending communication sentence
+
+#define TOKENSIZE 10
+
+#define PLYPMT ("PLYPMT")               
+#define GAMEND ("GAMEND")
+#define ADDYTO 1                        //Token array index for address to send
+#define ADDYFROM 2                      //Token array index for from address 
+#define CMDSMT 0                        //Token array index for command sentence
+#define GROW 3                          //Token array index for row
+#define GCOL 4                          //Token array index for column
+#define GPLAYER 5                       //Token array index for address to send
+#define TIME    2                       //Token array index for time
+#define GRST 3                          //Token array index for reset
+
+// Global Variables >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+char rowCount = 0;          //Initializing row for looping through tictactoe array
+char columnCount = 0;       //Initializing column for looping through tictactoe array
+char timeCount = 0;             
+int increment=0;            //Initializing increment for loop from 0 to 2 on increment button press
+int decrement=2;            //Initializing increment for loop from 0 to 2 on increment button press
+char selectOption = 0;      //Initializing for determining row or column is next to select
+char displayTimer=0;        //Initializing for display the occupied position in the tictactoe array
+char resetTimerCounter = 0;
+char resetPressFlag = 0;	//Turned on when the reset is occured
+char resetEnterFlag = 0;	//Turned on when both reset and enter button is pressed together for reset
+char gameStatus=  0;		//To indicate the game state when updating value in tictactoe
+char sentStatus= 0;		//Turned on to run the timer to display the sentence generated
+char turnTimerFlag = TRUE;  	//Initializing to indicate the turn timer to shift the turn according to the player  
+char turnTimer = 30;       	 //Initializing the turn timer value to display in the terminal window
+char *ptr ;                 	//For pointing the address of the array to store the communication sentence
+char buf[BUFSIZE];          	//created string 
+char buffer[BUFFSIZE];      	//received string
+char sentenceDisplayTimer=0;    //Initializing for displaying the communication sentence for 5 seconds
+char autoplacementFlag = FALSE; //Initializing to indicate that 30 seconds is over to autoplace the character in the tictactoe
+char sentenceReady = FALSE;
+char insert = 0;		//To hold each byte received at the serial port
+char *tokens[TOKENSIZE]={0};	//To save the validated recieved sentence from serial communication
+char sent1 = 0;			//Turned on when the placement sentence is recieved
+char sent = 0;			//Turned on when the reset sentence is sent
+char timerCount = 0;		//To save the winning time in minute after reception in serial communication
+char wonDraw = 0;		//To save if the game is draw after reception in serial communication
+char player =  0;		//To save which player won after reception in serial communication
+char wonTime = 0;		//To save the winning time in minute after reception in serial communication
+char wonTime1 = 0;		//To save the winning time in second after reception in serial communication
+char sent3 = 0;			//Turned on when the placement sentence is sent
+char sent4=0;			//Turned on when the game end sentence is recieved
+char sentRdy = 0;		//Turned on when the complete sentence from the serial communication is recieved
+
+typedef struct GameBoard{
+    char tictactoe[ROW][COLUMN];
+    char player;
+    char turnCounter;
+    char winFlag;
+}GameBoard_t;
+
+typedef struct tictactoeSystem{
+    int address[SIZE];
+    GameBoard_t game;
+    char select;
+    char time[TIME];
+    char status;
+}tictactoeSystem_t;
+
+tictactoeSystem_t ttt198;
+
+// Functions >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+
+/*>>> initializeGameSystem >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+Author:     GMuraleedharan
+Date:       9/12/2020
+Modified:   Name or None
+Desc:       Initialising all the values within the TicTacToe system. 
+Input:      None
+Returns:    None
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>*/
+void initializeGameSystem(void)
+{
+    for(rowCount=0;rowCount<ROW; rowCount++)
+    {
+        for(columnCount=0;columnCount<COLUMN; columnCount++)
+        {
+            ttt198.game.tictactoe[rowCount][columnCount] = 0;
+        }//eo for-loop
+    }//eo for-loop
+    ttt198.game.player = 0;
+    ttt198.game.turnCounter = 0;
+    ttt198.game.winFlag = 0;
+    ttt198.select = 0;
+    
+    for(timeCount=0;timeCount<TIME; timeCount++)
+    {
+        ttt198.time[timeCount] = 0;
+    }//eo for-loop
+    ttt198.status =0;
+}// eo initializeGameSystem::
+
+/*>>> getCheckSum >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+Author:     GMuraleedharan
+Date:       9/12/2020
+Modified:   Name or None
+Desc:       To create unique value that can be reproduced by any system in the network
+Input:      Pointer pointing to first address of the communication system
+Returns:    The unique value created from the communication sentence
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>*/
+char getCheckSum(char *ptr)
+{
+    char checkSum = 0;
+    while(*ptr)
+    {
+        checkSum+=*ptr;
+        ptr++;
+    }//eo while
+    return checkSum;
+}//eo getCheckSum ::
+
+/*>>> createCommunicationSentence >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+Author:     GMuraleedharan
+Date:       9/12/2020
+Modified:   Name or None
+Desc:       To create communication sentence containing information regarding the placement madein the tictactoe system
+Input:      None
+Returns:    Print the communication sentence created
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>*/
+void createCommunicationSentence()
+{
+    sprintf(buf,"$PLYPMT,%i,%i,%i,%i,%c\0",ADDRESS,CONTROLLERADDRESS,rowCount,columnCount,ttt198.game.tictactoe[rowCount][columnCount]);
+    sprintf(buf,"%s,%i^\0",buf,getCheckSum(buf));
+    pic.puts(buf);
+    sent1=1;
+}//eo createCommunicationSentence::
+
+/*>>> createCommunicationSentence >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+Author:     GMuraleedharan
+Date:       9/12/2020
+Modified:   Name or None
+Desc:       To create communication sentence containing information regarding the placement madein the tictactoe system
+Input:      None
+Returns:    Print the communication sentence created
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>*/
+void createCommunicationSentence2()
+{
+    if(gameStatus = 1)
+    {
+        sentStatus = 'Y';
+    }
+    else if(gameStatus = 2)
+    {
+        sentStatus = 'D';
+    }//eo if-else
+    sprintf(buf,"$PLYPMT,%i,%i,%c\0",ADDRESS,CONTROLLERADDRESS,sentStatus);
+    sprintf(buf,"$GAMRST,198,1,Y\0");
+    sprintf(buf,"%s,%i^\0",buf,getCheckSum(buf));
+    pic.puts(buf);
+    sent=1;
+}//eo createCommunicationSentence::
+
+/*>>> tictactoeValueEnter >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+Author:     GMuraleedharan
+Date:       9/12/2020
+Modified:   None
+Desc:       For the placement of 'X'or 'O' in the respective column or row when the enter button is spressed
+Input:      None
+Returns:    None
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>*/
+void tictactoeValueEnter()
+{
+    if(ttt198.game.player == 0)
+    {
+        if(ttt198.game.tictactoe[rowCount][columnCount] != 'X' && ttt198.game.tictactoe[rowCount][columnCount] != 'O')
+        {
+            ttt198.game.tictactoe[rowCount][columnCount] = 'X';
+            createCommunicationSentence();
+            sentenceDisplayTimer = 1;
+            ttt198.game.player = !ttt198.game.player;
+            ttt198.game.turnCounter++;
+            if(ttt198.game.turnCounter>=9)
+            {
+                ttt198.status = 3;
+            }//eo if
+        }
+        else if(ttt198.game.tictactoe[rowCount][columnCount] == 'X' || ttt198.game.tictactoe[rowCount][columnCount] == 'O')
+        {
+            displayTimer=1;
+        }//eo if-else
+    }//eo if-else
+    else if(ttt198.game.player == 1)
+    {
+        if(ttt198.game.tictactoe[rowCount][columnCount] != 'X' && ttt198.game.tictactoe[rowCount][columnCount] != 'O')
+        {
+            ttt198.game.tictactoe[rowCount][columnCount] = 'O';
+            createCommunicationSentence();       
+            sentenceDisplayTimer = 1;
+            ttt198.game.player = !ttt198.game.player;
+            ttt198.game.turnCounter++;
+            if(ttt198.game.turnCounter>=9){
+                ttt198.status = 3;
+            }//eo if
+        }
+        else if(ttt198.game.tictactoe[rowCount][columnCount] == 'X' || ttt198.game.tictactoe[rowCount][columnCount] == 'O')
+        {
+            displayTimer=1; 
+        }//eo if-else
+    }//eo if-else
+}//eo tictactoeValueEnter::
+
+/*>>> decrementButtonPress >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+Author:     GMuraleedharan
+Date:       9/12/2020
+Modified:   Name or None
+Desc:       To decrement the row or column count for the placement of 'X'or 'O'
+Input:      None
+Returns:    None
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>*/
+void decrementButtonPress()
+{
+    decrement--;
+    if(decrement < 0)
+    {
+        decrement = 2;
+    }//eo if
+}// eo decrementButtonPress::
+
+/*>>> incrementButtonPress >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+Author:     GMuraleedharan
+Date:       9/12/2020
+Modified:   Name or None
+Desc:       To increment the row or column count for the placement of 'X'or 'O'
+Input:      None
+Returns:    None
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>*/
+void incrementButtonPress()
+{
+    increment++;
+    if(increment >= 3)
+    {
+        increment = 0;
+    }//eo if
+}// eo incrementButtonPress::
+
+/*>>> enterButtonPress >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+Author:     GMuraleedharan
+Date:       9/12/2020
+Modified:   Name or None
+Desc:       To save the values of the row and column selected by the player for the placement of character 'X' OR 'O'
+Input:      None
+Returns:    None
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>*/
+void enterButtonPress()
+{
+    if(selectOption == 0)
+    {
+        rowCount = ttt198.select;
+        selectOption = 1;
+    }
+    else if(selectOption == 1)
+    {
+        columnCount = ttt198.select;
+        selectOption = 0;
+        tictactoeValueEnter();
+    }//eo if-else
+}//eo enterButtonPress::
+
+/*>>> resetButtonPress >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+Author:     GMuraleedharan
+Date:       9/12/2020
+Modified:   Name or None
+Desc:       To restart or reset the tictactoe system and the terminal window
+Input:      None
+Returns:    None
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>*/
+void resetButtonPress()
+{
+    resetTimerCounter++;
+    if(resetTimerCounter>=3){
+       createCommunicationSentence2();
+        resetPressFlag = 2;
+        resetTimerCounter=0;  
+         initializeGameSystem();    
+    }//eo if
+}//eo resetButtonPress
+
+/*>>> updateDisplay >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+Author:     GMuraleedharan
+Date:       9/12/2020
+Modified:   None
+Desc:       Initialising all the values within the TicTacToe system. 
+Input:      None
+Returns:    None
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>*/
+void updateDisplay(void)
+{
+    int rowLoop=0;
+    int colLoop=0;
+
+    //To display player placement sentence
+    pc.printf("\e[2J\033[0;0HTicTacToe198");
+    if(sent == 1){
+        timerCount++;
+        pc.printf("\e[24;5H%s\n",buf);
+        if(timerCount>=5)
+        {
+            sent =0;
+            timerCount = 0;
+        }//eo if
+    }//eo if
+
+    //To display the game end sentence	
+     if(sent1 == 1){
+        timerCount++;
+        pc.printf("\e[24;5H%s\n",buf);
+        if(timerCount>=5)
+        {
+            sent1 =0;
+            timerCount = 0;
+        }//eo if
+    }//eo if
+
+    //To display winner or draw condition    
+    if(ttt198.status ==2 && wonDraw == 'W' && player == 'X'){
+         pc.printf("\e[26;5HX won Time:%iminutes %iseconds\n",wonTime ,wonTime1);
+    }
+    else if(ttt198.status ==4 && wonDraw == 'W' && player == 'O'){
+        pc.printf("\e[26;5HO won Time:%iminutes %iseconds\n",wonTime ,wonTime1);
+    }
+    if(ttt198.status ==3 && wonDraw == 'D'){
+         pc.printf("\e[26;5HNo one won Time:%iminutes %iseconds\n",wonTime ,wonTime1);
+    }
+    if(ttt198.game.player == 0 )
+    {
+        pc.printf("\e[3;0HPlayer:X\t\tTurn Count:%i\n",ttt198.game.turnCounter);
+    }
+    else
+    {
+        pc.printf("\e[3;0HPlayer:O\t\tTurn Count:%i\n",ttt198.game.turnCounter);
+    }//eo if-else
+    if(selectOption == TRUE)
+    {
+        pc.printf("\e[5;0HColumn\n");
+    }
+    else if(selectOption == FALSE) 
+    {
+        pc.printf("\e[5;0HRow\n");
+    }//eo if-else
+    
+    //  To display the player already exist in the display window
+    if(displayTimer>0)
+    {
+        displayTimer++;
+        pc.printf("\e\033[36;3H***Position Already Filled Please Select Another Value***");
+        if(displayTimer >3)
+        {
+            displayTimer=0;
+        }//eo if
+    }//eo if
+     
+    //To display the sentence recieved 
+    if(sent3 == 1){
+        timerCount++;
+        pc.printf("\e[24;5H%s\n",buf);
+        if(timerCount>=5)
+        {
+            sent3 =0;
+            timerCount = 0;
+        }//eo if
+    }//eo if
+     if(sent4 == 1){
+        timerCount++;
+        pc.printf("\e[24;5H%s\n",buf);
+        if(timerCount>=5)
+        {
+            sent4 =0;
+            timerCount = 0;
+        }//eo if
+    }//eo if
+
+    pc.printf("\e[7;0HSelect:%i\n",ttt198.select);
+    pc.printf("\e[9;22HCOLUMN\n");
+    pc.printf("\e[11;0H\t\t0\t1\t2\n");
+    pc.printf("\e\033[13;10H0\033[13;21H|\033[13;29H|");
+    pc.printf("\e[15;5HR\033[15;15H---------------------");
+    pc.printf("\e[17;5HO\033[17;10H1\033[17;21H|\033[17;29H|");
+    pc.printf("\e[19;5HW\033[19;15H---------------------");
+    pc.printf("\e\033[21;10H2\033[21;21H|\033[21;29H|");
+}// eo updateDisplay::
+
+/*>>> userInputDisplay >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+Author:     GMuraleedharan
+Date:       9/12/2020
+Modified:   Name or None
+Desc:       To display the tictactoe board in the terminal window
+Input:      None
+Returns:    None
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>*/
+void userInputDisplay()
+{
+    if(ttt198.game.tictactoe[0][0] == 'X')
+    {
+        pc.printf("\e\033[13;17HX");
+    }
+    else if(ttt198.game.tictactoe[0][0] == 'O')
+    {
+        pc.printf("\e\033[13;17HO");
+    }//eo if-else
+    if(ttt198.game.tictactoe[0][1] == 'X')
+    {
+        pc.printf("\e\033[13;25HX");
+    }
+    else if(ttt198.game.tictactoe[0][1] == 'O')
+    {
+        pc.printf("\e\033[13;25HO");
+    }//eo if-else
+    if(ttt198.game.tictactoe[0][2] == 'X')
+    {
+        pc.printf("\e\033[13;33HX");
+    }
+    else if(ttt198.game.tictactoe[0][2] == 'O')
+    {
+        pc.printf("\e\033[13;33HO");
+    }//eo if-else
+    if(ttt198.game.tictactoe[1][0] == 'X')
+    {
+        pc.printf("\e\033[17;17HX");
+    }
+    else if( ttt198.game.tictactoe[1][0] == 'O')
+    {
+        pc.printf("\e\033[17;17HO");
+
+    }//eo if-else
+    if(ttt198.game.tictactoe[1][1] == 'X')
+    {
+        pc.printf("\e\033[17;25HX");
+    }
+    else if(ttt198.game.tictactoe[1][1] == 'O')
+    {
+        pc.printf("\e\033[17;25HO");
+    }//eo if-else
+    if(ttt198.game.tictactoe[1][2] == 'X')
+    {
+        pc.printf("\e\033[17;33HX");
+    
+    }
+    else if(ttt198.game.tictactoe[1][2] == 'O')
+    {
+        pc.printf("\e\033[17;33HO");
+    }//eo if-else
+    if(ttt198.game.tictactoe[2][0] == 'X')
+    {
+        pc.printf("\e\033[21;17HX");
+    }
+    else if(ttt198.game.tictactoe[2][0] == 'O')
+    {
+        pc.printf("\e\033[21;17HO");
+    }//eo if-else
+    if(ttt198.game.tictactoe[2][1] == 'X')
+    {
+        pc.printf("\e\033[21;25HX");
+    }
+    else if(ttt198.game.tictactoe[2][1] == 'O')
+    {
+        pc.printf("\e\033[21;25HO");
+    }//eo if-else
+    if(ttt198.game.tictactoe[2][2] == 'X' )
+    {
+        pc.printf("\e\033[21;33HX");
+    }
+    else if(ttt198.game.tictactoe[2][2] == 'O')
+    {
+        pc.printf("\e\033[21;33HO");  
+    }//eo if-else
+}//eo userInputDisplay::
+
+/*>>> pushButtonPressed >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+Author:     GMuraleedharan
+Date:       9/12/2020
+Modified:   None
+Desc:       To detect the push button press using deboucing and to make corresponding push button press conditions
+Input:      None
+Returns:    None
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>*/
+void pushButtonPressed()
+{
+    if(pb1)
+    {
+        incrementButtonPress();
+        ttt198.select = increment;
+    }//eo if
+    if(pb2)
+    {
+        decrementButtonPress();
+        ttt198.select = decrement;
+    }//eo if
+    if(pb3)
+    {
+        enterButtonPress();
+    }//eo if
+    if(pb3&& pb4)
+    {
+        resetButtonPress();
+    }//eo if
+}//eo pushButtonPressed::
+
+/*>>> validateSentence >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+Author:     GMuraleedharan
+Date:       9/12/2020
+Modified:   Name or None
+Desc:       To check the checksum of received sentence is same as of generated checksum
+Input:      Address pointing to the array
+Returns:    None
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>*/
+char validateSentence(char *ptr)
+{
+    char checkSum=0,recvdCs = 0;
+    unsigned char count =strlen(ptr);
+    char checksumFlag = FALSE;
+    while(checksumFlag == FALSE)
+    {
+        if(*(ptr+count) == '^')
+        {
+            *(ptr+count) =0;
+        }//eo if
+        if(*(ptr+count) == ',')
+        {
+            *(ptr+count) =0;
+            recvdCs=atoi(ptr+count+1);
+            checksumFlag = TRUE;
+        }//eo if
+        count--;
+    }//eo while
+    checkSum=getCheckSum(ptr);
+    if(checkSum == recvdCs)
+    {
+        return TRUE;
+    }
+    else
+    {
+        return FALSE;
+    }//eo if else
+}//eo validateSentence::
+
+/*>>> parseSentence >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+Author:     GMuraleedharan
+Date:       9/12/2020
+Modified:   Name or None
+Desc:       To save the collected sentence's each information in an array
+Input:      Address pointing to the array
+Returns:    None
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>*/
+void parseSentence(char *ptr)
+{
+    unsigned char tokenCounter =0;
+    while(*ptr)
+    {
+        if(*ptr == '$' || *ptr == ',')
+        {
+            *ptr =0x00;
+            tokens[tokenCounter] = ptr+1;
+            tokenCounter++;
+        }//eo if
+        ptr++;
+    }//eo while
+}//eo parseSentence::
+
+/*>>> executeSentence >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+Author:     GMuraleedharan
+Date:       9/12/2020
+Modified:   Name or None
+Desc:       To save the collected sentence into respective positions after checking 
+Input:      None
+Returns:    None
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>*/
+void executeSentence(void)
+{ 
+    
+    if(atoi(tokens[ADDYTO]) == CONTROLLERADDRESS)
+    {
+        
+        if(atoi(tokens[ADDYFROM]) == ADDRESS)
+        {
+    
+            if(strcmp(tokens[CMDSMT],PLYPMT) == 0)
+            {
+               rowCount = atoi(tokens[GROW]);
+                columnCount = atoi(tokens[GCOL]);
+                ttt198.game.tictactoe[rowCount][columnCount] = *tokens[GPLAYER];
+            }
+            else if(strcmp(tokens[CMDSMT],GAMEND) == 0)
+            {
+                wonDraw = *tokens[8];
+                player =  *tokens[9];
+                wonTime = *tokens[10];
+                wonTime1 = *tokens[11];
+            }//eo if-else
+        }//eo if
+    }//eo if
+}//eo executeSentence::               
+
+
+/*>>> collectSentence >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+Author:     GMuraleedharan
+Date:       9/12/2020
+Modified:   Name or None
+Desc:       To collect the sentence recieved in an array
+Input:      Address pointing to the array
+Returns:    None
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>*/
+void collectSentence(char *ptr)
+{
+    char hold=0;
+    while(hold!='^')
+    {
+        if(pic.readable())
+        {
+            hold=pic.getc();
+            ptr++;
+            *ptr=hold;
+            if (hold=='^')
+            {
+                ptr++;
+                *ptr = 0x00;
+                sentRdy=TRUE;
+            }//eo if
+        }//eo if
+    }//eo while
+}//eo collectSentence
+
+/*>>> MAIN: FUNCTION >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>*/
+int main( void )
+{
+    initializeGameSystem();
+    while(1)
+    {
+        timer.start();
+        if(timer.read()>=1)
+        {
+            pushButtonPressed();
+            updateDisplay();
+            userInputDisplay();
+            collectSentence(buffer);
+            if(sentRdy)
+            {
+                pc.printf("%s",buffer);
+                if(validateSentence(buffer))
+                {
+                    parseSentence(buffer);
+                    executeSentence();   
+                    sentRdy=FALSE;
+                }//eo if
+            }//eo if
+            timer.reset();
+        }// eo if
+    }//eo while
+}// eo main::
+
+
+
+	//>>> Lab4 - TicTacToe - PIC >>>
+/*>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+	File Name:	ELNC6007GMSLab4.c
+	Author:		GMuraleedharan
+	Date:		9/12/2020
+	Modified:	Name or None
+	c Fanshawe College, 2020
+
+	Description: *** Designing of tic-tac-toe program which makes a communication sentence to be communicated and responds to the incoming commands from a remote controller***
+	
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>*/
+
+// Preprocessor >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+#include "pragmas.h"
+#include <adc.h>
+#include <stdio.h>
+#include <usart.h>
+
+// Libraries >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+#include <stdlib.h>
+#include <p18f45k22.h>
+#include <delays.h>
+#include <string.h>
+
+// Constants >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+#define TRUE	1
+#define FALSE	0	
+#define ROW		3					//Row size of the tictactoe array
+#define COLUMN  3					//Column size of the tictactoe array
+#define SIZE	3					//Size of the address
+#define TIME  	2					//Size of game timer array
+#define T0FLAG	INTCONbits.TMR0IF 	//Timer flag to detect overflow of 1 sec
+#define T01SEC	0x0BDC				//Roll over time to be set in the timer
+#define TURNS   10					//Total number of turns for the player
+
+#define SEC 1						//Array index which store seconds
+#define MIN 0						//Array index which store minutes
+
+#define LED12OP	TRISCbits.TRISC1 = 0 		//LEDs 1 and 2 on and off 
+#define LED12IP	TRISCbits.TRISC1 = 1
+#define LED1ON 	LATCbits.LATC1 = 0
+#define LED2ON  LATCbits.LATC1 = 1
+
+#define LED34OP   TRISCbits.TRISC2 = 0		//LEDs 3 and 4 on and off 
+#define LED34IP   TRISCbits.TRISC2 = 1
+#define LED3ON   LATCbits.LATC2 = 0
+#define LED4ON   LATCbits.LATC2 = 1
+
+#define LED56OP   TRISCbits.TRISC3 = 0		//LEDs 5 and 6 on and off 
+#define LED56IP   TRISCbits.TRISC3 = 1
+#define LED5ON   LATCbits.LATC3 = 0
+#define LED6ON   LATCbits.LATC3 = 1
+
+#define LED78OP   TRISDbits.TRISD0 = 0		//LEDs 7 and 8 on and off 
+#define LED78IP   TRISDbits.TRISD0 = 1
+#define LED7ON   LATDbits.LATD0 = 0
+#define LED8ON   LATDbits.LATD0 = 1
+
+#define LED910OP   TRISDbits.TRISD1 = 0		//LEDs 9 and 10 on and off 
+#define LED910IP   TRISDbits.TRISD1 = 1
+#define LED9ON    LATDbits.LATD1 = 0
+#define LED10ON   LATDbits.LATD1 = 1
+
+#define LED1112OP   TRISDbits.TRISD2 = 0	//LEDs 11 and 12 on and off 
+#define LED1112IP   TRISDbits.TRISD2 = 1
+#define LED11ON    LATDbits.LATD2 = 0
+#define LED12ON   LATDbits.LATD2 = 1
+
+#define LED1314OP   TRISDbits.TRISD3 = 0	//LEDs 13 and 14 on and off 
+#define LED1314IP   TRISDbits.TRISD3 = 1
+#define LED13ON    LATDbits.LATD3 = 0
+#define LED14ON   LATDbits.LATD3 = 1
+
+#define LED1516OP   TRISCbits.TRISC4 = 0	//LEDs 15 and 16 on and off 
+#define LED1516IP   TRISCbits.TRISC4 = 1
+#define LED15ON   LATCbits.LATC4 = 0
+#define LED16ON   LATCbits.LATC4 = 1
+
+#define LED1718OP   TRISCbits.TRISC5 = 0	//LEDs 17 and 18 on and off 
+#define LED1718IP   TRISCbits.TRISC5 = 1
+#define LED17ON   LATCbits.LATC5 = 0
+#define LED18ON   LATCbits.LATC5 = 1
+
+#define CONTROLLERADDRESS 1				//Address of the remote controller to sent the communication sentence
+#define ADDRESS	 198					//Address of the sender 
+#define BUFSIZE 50						//Size of the array to store the communication sentence
+#define BUFFSIZE 50						//Size of the array to store the communication sentence
+
+#define RESET 0                         //Settings for interrupt
+#define ENABLED 1
+#define LOW 0
+
+#define RC1FLAG PIR3bits.RC2IF         //RC1FLAG will go high when a byte is received
+#define RC1BUFF RCREG2					//RC1BUFF store the byte received
+#define TOKENSIZE 10
+
+#define PLYPMT ("PLYPMT")
+#define GAMRST ("GAMRST")
+#define ADDYTO 1						//Token array index for address to send
+#define ADDYFROM 2						//Token array index for from address 
+#define CMDSMT 0						//Token array index for command sentence
+#define GROW 3							//Token array index for row
+#define GCOL 4							//Token array index for column
+#define GPLAYER 5						//Token array index for address to send
+#define TIME    2    
+#define GRST 3 
+
+// Global Variables >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+char rowCount = 0;	 				//Initializing row for looping through tictactoe array
+char columnCount = 0;				//Initializing column for looping through tictactoe array
+char timeCount = 0;					
+int increment=0;					//Initializing increment for loop from 0 to 2 on increment button press
+int decrement=2;					//Initializing increment for loop from 0 to 2 on increment button press
+char selectOption = 0;				//Initializing for determining row or column is next to select
+char displayTimer=0;				//Initializing for display the occupied position in the tictactoe array
+char gameTimerStart = 0;			//Turned on when sentence is recieved from mbed
+char resetReceive = 0;				//Turned on when reset is received when sentence is received to display it
+char turnTimerFlag = TRUE;			//Initializing to indicate the turn timer to shift the turn according to the player  
+char turnTimer = 30;				//Initializing the turn timer value to display in the terminal window
+char *ptr ;							//For pointing the address of the array to store the communication sentence
+char buf[BUFSIZE];					//created string 
+char buffer[BUFFSIZE];   			//received string
+char sentenceDisplayTimer=0;			//Initializing for displaying the communication sentence for 5 seconds
+char autoplacementFlag = FALSE; 		//Initializing to indicate that 30 seconds is over to autoplace the character in the tictactoe
+char sentenceReady = FALSE;    			//Initializing for indicating the sentence reception
+char insert = 0;
+char *tokens[TOKENSIZE]={0};		//Array to store the collected sentence
+char resetPressFlag = 0;			//To indicate reset sentence is received
+char winCheck = 0;					//To store whether it is a win or draw
+char player=0;						//To store the winner player
+
+typedef struct GameBoard{
+	char tictactoe[ROW][COLUMN];
+	char player;
+	char turnCounter;
+	char winFlag;
+}GameBoard_t;
+
+typedef struct tictactoeSystem{
+	int address[SIZE];
+	GameBoard_t game;
+	char select;
+	char time[TIME];
+	char status;
+}tictactoeSystem_t;
+
+tictactoeSystem_t ttt198;
+
+// Functions >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+
+/*>>> initializeGameSystem >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+Author:		GMuraleedharan
+Date:		20/10/2020
+Modified:	Name or None
+Desc:		Initialising all the values within the TicTacToe system. 
+Input: 		None
+Returns:	None
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>*/
+void initializeGameSystem(void)
+{
+	for(rowCount=0;rowCount<ROW; rowCount++)
+	{
+		for(columnCount=0;columnCount<COLUMN; columnCount++)
+		{
+			ttt198.game.tictactoe[rowCount][columnCount] = 0;
+		}//eo for-loop
+	}//eo for-loop
+	ttt198.game.player = 0;
+	ttt198.game.turnCounter = 0;
+	ttt198.game.winFlag = 0;
+	ttt198.select = 0;
+	
+	for(timeCount=0;timeCount<TIME; timeCount++)
+	{
+		ttt198.time[timeCount] = 0;
+	}//eo for-loop
+	ttt198.status =0;
+}// eo initializeGameSystem::
+
+
+/*>>> setOscillatorFrequency >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+Author:		GMuraleedharan
+Date:		20/10/2020
+Modified:	Name or None
+Desc:		Set the oscillator frequency to 4MHZ of PIC18F45K22.
+Input: 		None
+Returns:	None
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>*/
+void setOscillatorFrequency(void)
+{
+	OSCCON = 0x52; // Sleep mode on sleep instruction, HFINTOSC/4 ? (4 MHz),  Device is running from the internal oscillator,  Internal oscillator block
+	OSCCON2 = 0x04; // Phase Lock Loop, CLK from OSC, MFINTOSC is not used, Secondary oscillator is not enabled, PRISD OSC ON
+	OSCTUNE = 0x80; // INTSRC on, PLL disabled, oscillator module is factory default frequency
+
+}// eo setOscillatorFrequency::
+
+/*>>> portConfiguration >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+Author:		GMuraleedharan
+Date:		20/10/2020
+Modified:	Name or None
+Desc:		Set the configuration of port of PIC18F45K22.
+Input: 		None
+Returns:	None
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>*/
+void portConfiguration(void)
+{
+
+   	ANSELA = 0x00;		//Digital at pins RA4, RA5, RA6, RA7 for push buttons
+	LATA = 0x00;		//low logic at pins RA4, RA5, RA6, RA7 for push buttons
+	TRISA = 0xff;		//input pins at RA4, RA5, RA6, RA7 for push buttons
+
+	ANSELC = 0x00; 
+	LATC = 0x00;
+	TRISC = 0xFF;		//Serial port and LED port configuration
+
+	ANSELD = 0x00; 
+	LATD = 0x00;
+	TRISD = 0xFF;		//LED port configuration
+}// eo portConfiguration::
+
+/*>>> serialPortConfiguration >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+Author:		GMuraleedharan
+Date:		20/10/2020
+Modified:	Name or None
+Desc:		Set the serial port 1 configuration of PIC18F45K22 for 9600 baudrate.
+Input: 		None
+Returns:	None
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>*/
+void serialPortConfiguration(void)
+{
+	SPBRG1=25; 
+	TXSTA1=0x26;
+	RCSTA1=0x90;
+	BAUDCON1=0x40;
+}// eo serialPortConfiguration::
+
+/*>>> serialPortConfiguration >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+Author:		GMuraleedharan
+Date:		9/12/2020
+Modified:	Name or None
+Desc:		Set the serial port 2 configuration of PIC18F45K22 for serial communication
+Input: 		None
+Returns:	None
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>*/
+void serialPort2Configuration(void)
+{
+	SPBRG2=12;
+	TXSTA2=0x26;
+	RCSTA2=0x90;
+	BAUDCON2=0x40;
+}//eo serialPort2Configuration::
+
+/*>>> resetTimerConfiguration >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+Author:		GMuraleedharan
+Date:		20/10/2020
+Modified:	Name or None
+Desc:		Resetting the pre count and timer flag bit for timer 0 for 1 sec.
+Input: 		Value for pre-set count for 1 second roll over
+Returns:	None
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>*/
+void resetTimerConfiguration(int count)
+{
+	TMR0H=0x0B; // setting Timer0 Register, High Byte for preset count for 1 second timer
+	TMR0L=0xDC; // setting Timer0 Register, Low Byte for preset count for 1 second timer
+	T0FLAG=FALSE; //Resetting the flag bit TMR0IF when TMR0H:TMR0L register overflows in 16 bit
+}// eo resetTimerConfiguration::
+
+/*>>> timerConfiguration >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+Author:		GMuraleedharan
+Date:		20/10/2020
+Modified:	Name or None
+Desc:		Set the pre scalar value and pre count for timer 0 for 1 sec.
+Input: 		Value for pre-set count for 1 second roll over
+Returns:	None
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>*/
+void timerConfiguration(int count)
+{
+	T0CON=0x93; // TOCON register for setting prescalar value of 16 for the timer
+	resetTimerConfiguration(count);
+}// eo timerConfiguration::
+
+/*>>> interruptConfiguration >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+Author:		GMuraleedharan
+Date:		9/12/2020
+Modified:	Name or None
+Desc:		Enabling interrupt for serial port 2 for serial communication
+Input: 		None
+Returns:	None
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>*/
+void interruptConfiguration(void)
+{
+	PIR3bits.RC2IF =RESET;
+	PIE3bits.RC2IE =ENABLED;
+	IPR3bits.RC2IP =LOW;
+	INTCON |=0xC0;
+}// eo interruptConfiguration::
+
+/*>>> initializeSystem >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+Author:		GMuraleedharan
+Date:		20/10/2020
+Modified:	09/12/2020
+Desc:		Initialising the system by configuring values for oscillator, timer, port and serial port.
+Input: 		None
+Returns:	None
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>*/
+void initializeSystem(void)
+{
+	setOscillatorFrequency();
+	portConfiguration();
+	serialPortConfiguration();
+	serialPort2Configuration();
+	timerConfiguration(T01SEC);
+	interruptConfiguration();
+	printf("\e[26;0HGame on...\n");
+}// eo initializeSystem::
+
+
+/*>>> getCheckSum >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+Author:		GMuraleedharan
+Date:		09/10/2020
+Modified:   Name or None
+Desc:		To create unique value that can be reproduced by any system in the network
+Input: 		Pointer pointing to first address of the communication system
+Returns:	The unique value created from the communication sentence
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>*/
+char getCheckSum(char *ptr)
+{
+	char checkSum = 0;
+	while(*ptr){
+		checkSum+=*ptr;
+		ptr++;
+	}//eo while
+	return checkSum;
+}//eo getCheckSum ::
+
+/*>>> createCommunicationSentence >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+Author:		GMuraleedharan
+Date:		09/12/2020
+Modified:   Name or None
+Desc:		To create communication sentence containing information regarding the placement madein the tictactoe system
+Input: 		None
+Returns:	Print the communication sentence created
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>*/
+void createCommunicationSentence(void)
+{
+	sprintf(buf,"$PLYPMT,%i,%i,%i,%i,%c\0",CONTROLLERADDRESS,ADDRESS,rowCount,columnCount,ttt198.game.tictactoe[rowCount][columnCount]);
+	sprintf(buf,"%s,%i^\0",buf,getCheckSum(buf));
+	puts2USART(buf);
+}//eo createCommunicationSentence::
+
+/*>>> createCommunicationSentence2 >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+Author:		GMuraleedharan
+Date:		09/12/2020
+Modified:   Name or None
+Desc:		To create communication sentence containing information regarding the placement madein the tictactoe system
+Input: 		None
+Returns:	Print the communication sentence created
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>*/
+void createCommunicationSentence2(void)
+{
+	sprintf(buf,"$GAMEND,%i,%i,%c,%c,%i,%i\0",CONTROLLERADDRESS,ADDRESS,winCheck,player,ttt198.time[MIN],ttt198.time[SEC]);
+	sprintf(buf,"%s,%i^\0",buf,getCheckSum(buf));
+	puts2USART(buf);
+}//eo createCommunicationSentence2::
+
+/*>>> winPlayer1Conditioncheck >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+Author:		GMuraleedharan
+Date:		26/09/2020
+Modified:	09/12/2020
+Desc:		To check the winning condition for the player 1 with 'X' character
+Input: 		None
+Returns:	None
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>*/
+void winPlayer1Conditioncheck(void)
+{
+	if((ttt198.game.tictactoe[0][0]=='X' && ttt198.game.tictactoe[0][1]=='X' && ttt198.game.tictactoe[0][2]=='X')||
+	(ttt198.game.tictactoe[1][0]=='X' && ttt198.game.tictactoe[1][1]=='X'&& ttt198.game.tictactoe[1][2]=='X') ||
+	(ttt198.game.tictactoe[2][0]=='X' && ttt198.game.tictactoe[2][1]=='X' && ttt198.game.tictactoe[2][2]=='X') ||
+	(ttt198.game.tictactoe[0][0]=='X' && ttt198.game.tictactoe[1][0]=='X'&& ttt198.game.tictactoe[2][0]=='X') ||
+	(ttt198.game.tictactoe[0][1]=='X' && ttt198.game.tictactoe[1][1]=='X'&& ttt198.game.tictactoe[2][1]=='X') ||
+	(ttt198.game.tictactoe[0][2]=='X' && ttt198.game.tictactoe[1][2]=='X' && ttt198.game.tictactoe[2][2]=='X') ||
+	(ttt198.game.tictactoe[0][0]=='X' && ttt198.game.tictactoe[1][1]=='X'&& ttt198.game.tictactoe[2][2]=='X' )||
+	(ttt198.game.tictactoe[2][0]=='X'&& ttt198.game.tictactoe[1][1]=='X'&& ttt198.game.tictactoe[0][2]=='X'))
+	{
+		ttt198.status =2;	
+		sentenceDisplayTimer=1;
+		player = 'X';
+		winCheck = 'W';
+		createCommunicationSentence2();
+	}//eo if
+}//eo winPlayer1Conditioncheck::
+
+/*>>> winPlayer2Conditioncheck >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+Author:		GMuraleedharan
+Date:		26/09/2020
+Modified:	 	Name or None
+Desc:		To check the winning condition for the player 2 with 'O' character
+Input: 		None
+Returns:		None
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>*/
+void winPlayer2Conditioncheck(void)
+{
+	if((ttt198.game.tictactoe[0][0]== 'O' && ttt198.game.tictactoe[0][1] == 'O'&& ttt198.game.tictactoe[0][2] == 'O')||
+	(ttt198.game.tictactoe[1][0]== 'O' && ttt198.game.tictactoe[1][1]== 'O' && ttt198.game.tictactoe[1][2] == 'O')||
+	(ttt198.game.tictactoe[2][0]== 'O' && ttt198.game.tictactoe[2][1]== 'O' && ttt198.game.tictactoe[2][2] =='O')||
+	(ttt198.game.tictactoe[0][0]== 'O' && ttt198.game.tictactoe[1][0]== 'O' && ttt198.game.tictactoe[2][0] == 'O')||
+	(ttt198.game.tictactoe[0][1]== 'O' && ttt198.game.tictactoe[1][1]== 'O' && ttt198.game.tictactoe[2][1] ==  'O')||
+	(ttt198.game.tictactoe[0][2] == 'O'&& ttt198.game.tictactoe[1][2]== 'O' && ttt198.game.tictactoe[2][2] ==  'O')||
+	(ttt198.game.tictactoe[0][0]== 'O' && ttt198.game.tictactoe[1][1] == 'O'&& ttt198.game.tictactoe[2][2] ==  'O')||
+	(ttt198.game.tictactoe[2][0] == 'O'&& ttt198.game.tictactoe[1][1]== 'O' && ttt198.game.tictactoe[0][2] == 'O'))
+	{
+		ttt198.status =2;
+		sentenceDisplayTimer=1;
+		player = 'O';
+		winCheck = 'W';
+		createCommunicationSentence2();
+	}//eo if
+}//eo winPlayer2Conditioncheck::
+
+/*>>> updateDisplay >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+Author:		GMuraleedharan
+Date:		20/10/2020
+Modified:	09/12/2020
+Desc:		Initialising all the values within the TicTacToe system. 
+Input: 		None
+Returns:	None
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>*/
+void updateDisplay(void)
+{
+	if(ttt198.status == 0&&ttt198.time[SEC]>=10&&gameTimerStart == 1&&resetPressFlag == 0)
+	{
+ 		printf("\e[2J\033[0;0HTicTacToe198\t\tGameTime: 0%i:%i\t\tStatus:Playing",ttt198.time[MIN],ttt198.time[SEC]);
+	}//eo if
+
+	else if(ttt198.status == 0&&gameTimerStart == 1&&ttt198.time[SEC]<10&&resetPressFlag == 0)
+	{
+ 		printf("\e[2J\033[0;0HTicTacToe198\t\tGameTime: 0%i:0%i\t\tStatus:Playing",ttt198.time[MIN],ttt198.time[SEC]);
+	}//eo if-else
+
+	if(ttt198.status == 2 &&  !ttt198.game.player == 0)
+	{
+ 		printf("\e[2J\033[0;0HTicTacToe198\t\tGameTime: 0%i:%i \t\tStatus:X Won\n",ttt198.time[MIN],ttt198.time[SEC]);
+		ttt198.game.winFlag = TRUE;	
+	}
+   	 else if(ttt198.status == 2 &&  !ttt198.game.player == 1)
+	{
+ 		printf("\e[2J\033[0;0HTicTacToe198\t\tGameTime: 0%i:%i \t\tStatus:O Won\n",ttt198.time[MIN],ttt198.time[SEC]);
+		ttt198.game.winFlag = TRUE;	
+	}//eo if-else
+
+	if(ttt198.status == 3)
+	{
+ 		printf("\e[2J\033[0;0HTicTacToe198\t\tGameTime: 0%i:%i \t\tStatus:No one Won\n",ttt198.time[MIN],ttt198.time[SEC]);
+		ttt198.game.turnCounter ++;
+	}//eo if
+
+	if(gameTimerStart == 0)
+	{
+ 		printf("\e[2J\033[0;0HTicTacToe198\t\tGameTime: 00:00 \t\tStatus:Ready\n");
+	}//eo if
+	if(resetPressFlag == 2)
+	{
+		printf("\e[2J\033[0;0HTicTacToe198\t\tGameTime: 0%i:%i \t\tStatus:Reset\n",ttt198.time[MIN],ttt198.time[SEC]);
+		resetPressFlag = 1;
+	}//eo if
+	if(ttt198.game.player == 0)
+	{
+		printf("\e[3;0HPlayer:X\t\tTurn Count:%i\n",ttt198.game.turnCounter);
+	}
+	else
+	{
+		printf("\e[3;0HPlayer:O\t\tTurn Count:%i\n",ttt198.game.turnCounter);
+	}//eo if-else
+
+	//To display the player already exist in the display window
+	if(displayTimer>0)
+	{
+		displayTimer++;
+		printf("\e\033[36;3H***Position Already Filled Please Select Another Value***");
+		if(displayTimer >3)
+		{
+			displayTimer=0;
+		}//eo if
+	}//eo if
+
+	//To display the sentence created in the display window for 5 seconds
+	if(sentenceDisplayTimer > 0)
+	{
+		sentenceDisplayTimer++;
+		printf("\e\033[30;15H%s",buf);
+		if(sentenceDisplayTimer >5)
+		{
+			sentenceDisplayTimer=0;
+		}//eo if
+	}//eo if
+
+	printf("\e[5;25HTurn Time:%i\n",turnTimer);
+	printf("\e[7;0HSelect:%i\n",ttt198.select);
+	printf("\e[9;22HCOLUMN\n");
+	printf("\e[11;0H\t\t0\t1\t2\n");
+	printf("\e\033[13;10H0\033[13;21H|\033[13;29H|");
+	printf("\e[15;5HR\033[15;15H---------------------");
+	printf("\e[17;5HO\033[17;10H1\033[17;21H|\033[17;29H|");
+    printf("\e[19;5HW\033[19;15H---------------------");
+	printf("\e\033[21;10H2\033[21;21H|\033[21;29H|");
+}// eo updateDisplay::
+
+/*>>> userInputDisplay >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+Author:		GMuraleedharan
+Date:		26/09/2020
+Modified:	Name or None
+Desc:		To display the tictactoe board in the terminal window and LED glow along with respective conditions of display 
+Input: 		None
+Returns:	None
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>*/
+void userInputDisplay()
+{
+	if(ttt198.game.tictactoe[0][0] == 'X')
+	{
+		printf("\e\033[13;17HX");
+		LED910OP;
+		LED9ON;//GREEN
+	}
+	else if(ttt198.game.tictactoe[0][0] == 'O')
+	{
+		printf("\e\033[13;17HO");
+		LED910OP;
+		LED10ON;//YELLOW
+	}//eo if-else
+	if(ttt198.game.tictactoe[0][1] == 'X')
+	{
+		printf("\e\033[13;25HX");
+		LED1112OP;
+		LED12ON; //green
+	}
+	else if(ttt198.game.tictactoe[0][1] == 'O')
+	{
+		printf("\e\033[13;25HO");
+		LED1112OP;
+		LED11ON; //yellow
+	}//eo if-else
+	if(ttt198.game.tictactoe[0][2] == 'X')
+	{
+		printf("\e\033[13;33HX");
+		LED1314OP;
+		LED14ON;//GREEN
+	}
+	else if(ttt198.game.tictactoe[0][2] == 'O')
+	{
+		printf("\e\033[13;33HO");
+		LED1314OP;
+		LED13ON;//YELLOW
+	}//eo if-else
+	if(ttt198.game.tictactoe[1][0] == 'X')
+	{
+		printf("\e\033[17;17HX");
+		LED56OP;
+		LED6ON;//GREEN
+	}
+	else if( ttt198.game.tictactoe[1][0] == 'O')
+	{
+		printf("\e\033[17;17HO");
+		LED56OP;
+		LED5ON;//YELLOW
+
+	}//eo if-else
+	if(ttt198.game.tictactoe[1][1] == 'X')
+	{
+		printf("\e\033[17;25HX");
+		LED78OP;
+		LED8ON;//GREEN
+	}
+	else if(ttt198.game.tictactoe[1][1] == 'O')
+	{
+		printf("\e\033[17;25HO");
+		LED78OP;
+		LED7ON;//YELLOW
+	}//eo if-else
+	if(ttt198.game.tictactoe[1][2] == 'X')
+	{
+		printf("\e\033[17;33HX");
+		LED1516OP;
+		LED16ON;//GREEN
+	
+	}
+	else if(ttt198.game.tictactoe[1][2] == 'O')
+	{
+		printf("\e\033[17;33HO");
+		LED1516OP;
+		LED15ON;//YELLOW
+	}//eo if-else
+	if(ttt198.game.tictactoe[2][0] == 'X')
+	{
+		printf("\e\033[21;17HX");
+		LED12OP;
+		LED2ON;//GREEN
+	}
+	else if(ttt198.game.tictactoe[2][0] == 'O')
+	{
+		printf("\e\033[21;17HO");
+		LED12OP;
+		LED1ON;//YELLOW
+	}//eo if-else
+	if(ttt198.game.tictactoe[2][1] == 'X')
+	{
+		printf("\e\033[21;25HX");
+		LED34OP;
+		LED4ON;//GREEN
+	}
+	else if(ttt198.game.tictactoe[2][1] == 'O')
+	{
+		printf("\e\033[21;25HO");
+		LED34OP;
+		LED3ON;//YELLOW
+	}//eo if-else
+	if(ttt198.game.tictactoe[2][2] == 'X' )
+	{
+		printf("\e\033[21;33HX");
+		LED1718OP;
+		LED18ON;//GREEN
+	}
+	else if(ttt198.game.tictactoe[2][2] == 'O')
+	{
+		printf("\e\033[21;33HO");		
+		LED1718OP;
+		LED17ON;//YELLOW
+	}//eo if-else
+}//eo userInputDisplay::
+
+/*>>> gameTimerCheck >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+Author:		GMuraleedharan
+Date:		26/09/2020
+Modified:	Name or None
+Desc:		To keep a track on the game play time in minutes and seconds
+Input: 		None
+Returns:	None
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>*/
+void gameTimerCheck(void)
+{
+	if(gameTimerStart == 1&&ttt198.game.turnCounter<10&&ttt198.game.winFlag!=TRUE)
+	{
+		ttt198.time[SEC]++;
+		if(ttt198.time[SEC]>=60)
+		{
+			ttt198.time[SEC]=0;
+			ttt198.time[MIN]++;
+		}//eo if
+	}//eo if
+}//eo gameTimerCheck::
+
+/*>>> autoplacementTurn >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+Author:		GMuraleedharan
+Date:		09/11/2020
+Modified:	09/12/2020
+Desc:		To place the 'X' or 'O' according to the player turn automatically even no placements are made within 30 seconds by the players
+Input: 		None
+Returns:	None
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>*/
+void autoplacementTurn(void)
+{
+	char colIndex=0;
+	char rowIndex=0;
+
+	for(rowIndex=0; rowIndex<ROW; rowIndex++)
+	{
+		for(colIndex=0; colIndex<COLUMN; colIndex++)
+		{
+			if(autoplacementFlag == FALSE){
+				if(ttt198.game.tictactoe[rowIndex][colIndex] != 'X' && ttt198.game.tictactoe[rowIndex][colIndex] != 'O')
+				{
+					if(ttt198.game.player == 0)
+					{
+						ttt198.game.tictactoe[rowIndex][colIndex] = 'X';
+						rowCount=rowIndex;
+						columnCount=colIndex;
+						autoplacementFlag = TRUE;
+						sentenceDisplayTimer=1;
+						createCommunicationSentence2();
+					}
+					else if(ttt198.game.player == 1)
+					{
+						ttt198.game.tictactoe[rowIndex][colIndex] = 'O';
+						rowCount=rowIndex;
+						columnCount=colIndex;
+						sentenceDisplayTimer = 1;
+						autoplacementFlag = TRUE;
+						createCommunicationSentence2();
+					}//eo if-else
+				}//eo if
+			}//eo if
+		}//eo for-loop
+	}//eo for-loop
+}//eo autoplacementTurn::
+
+/*>>> playerTurnTimer >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+Author:		GMuraleedharan
+Date:		09/11/2020
+Modified:	Name or None
+Desc:		To keep a track on the player turn time
+Input: 		None
+Returns:	None
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>*/
+void playerTurnTimer(void)
+{
+	if(turnTimerFlag==TRUE&&gameTimerStart == 1 &&ttt198.game.turnCounter<10&&ttt198.game.winFlag!=TRUE)
+	{
+		turnTimer--;
+		if(turnTimer <=0)
+		{
+			autoplacementTurn();
+			autoplacementFlag = FALSE;
+			winPlayer1Conditioncheck();
+			winPlayer2Conditioncheck();
+			ttt198.game.player = !ttt198.game.player;
+			ttt198.game.turnCounter++;
+			turnTimerFlag=FALSE;
+		}//eo if
+	}
+	else if(turnTimerFlag==FALSE &&ttt198.game.turnCounter<10&&	ttt198.status !=2)
+	{
+		turnTimer=30;
+		turnTimerFlag=TRUE;	
+	}//eo if-else
+}//eo playerTurnTimer::
+
+
+/*>>> validateSentence >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+Author:		GMuraleedharan
+Date:		09/12/2020
+Modified:	Name or None
+Desc:		To check whether recieved checksum is same as calculated checksum
+Input: 		Array address for the sentence to be saved
+Returns:	True of false value according to comparison
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>*/
+char validateSentence(char *ptr)
+{
+	char checkSum=0,recvdCs = 0;
+	unsigned char count =strlen(ptr);
+	char checksumFlag = FALSE;
+	while(checksumFlag == FALSE)
+	{
+		if(*(ptr+count) == '^')
+		{
+			*(ptr+count) =0;
+		}//eo if
+		if(*(ptr+count) == ',')
+		{
+			*(ptr+count) =0;
+			recvdCs=atoi(ptr+count+1);
+			checksumFlag = TRUE;
+		}//eo if
+		count--;
+	}//eo while
+	checkSum=getCheckSum(ptr);
+	if(checkSum == recvdCs)
+	{
+		return TRUE;
+	}
+	else
+	{
+		return FALSE;
+	}//eo if-else
+}//eo validateSentence::
+
+/*>>> parseSentence >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+Author:		GMuraleedharan
+Date:		09/12/2020
+Modified:	Name or None
+Desc:		To save the sentence data into array according to position
+Input: 		Array address for the sentence to be saved
+Returns:	None
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>*/
+void parseSentence(char *ptr)
+{
+	unsigned char tokenCounter =0;
+	while(*ptr)
+	{
+		if(*ptr == '$' || *ptr == ',')
+		{
+			*ptr =0x00;
+			tokens[tokenCounter] = ptr+1;
+			tokenCounter++;
+		}//eo if
+		ptr++;
+	}//eo while
+}//eo parseSentence::
+
+/*>>> executeSentence >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+Author:		GMuraleedharan
+Date:		09/12/2020
+Modified:	Name or None
+Desc:		To save the saved sentence data into respective positions
+Input: 		None
+Returns:	None
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>*/
+void executeSentence()
+{
+    if(atoi(tokens[ADDYTO]) == ADDRESS)
+    {
+        if(atoi(tokens[ADDYFROM]) == CONTROLLERADDRESS)
+        {
+			if(strcmp(tokens[CMDSMT],PLYPMT) == 0)
+            {
+				rowCount = atoi(tokens[GROW]);
+                columnCount = atoi(tokens[GCOL]);
+             	ttt198.game.tictactoe[rowCount][columnCount] = *tokens[GPLAYER];
+				ttt198.game.player = !ttt198.game.player;
+				ttt198.game.turnCounter++;
+				gameTimerStart =1;
+				turnTimer=30;
+            }
+		
+			else if(strcmp(tokens[CMDSMT],GAMRST) == 0)
+            {  
+               		resetReceive = *tokens[GRST];
+					initializeSystem();
+					initializeGameSystem();
+            }//eo else-if
+        }//eo if
+    }//eo if
+	
+} //eo executeSentence
+
+/*>>> vectorHighInterrupt >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+Author:		GMuraleedharan
+Date:		09/12/2020
+Modified:	Name or None
+Desc:		Interrupt to call the collect sentence function when a byte is received at the serial port2
+Input: 		None
+Returns:	None
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>*/
+
+void ISR(); //FUNCTION PROROTYPE
+#pragma code vectorHighInterrupt = 0x08
+void vectorHighInterrupt(void)
+{
+	_asm
+	GOTO ISR
+	_endasm
+}
+#pragma code
+
+/*>>> receiveSentence >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+Author:		GMuraleedharan
+Date:		09/12/2020
+Modified:	Name or None
+Desc:		To collect the recieving data from the serial port to an array
+Input: 		Pointer to first address of array
+Returns:	None
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>*/
+void receiveSentence(char *ptr)
+{
+	char hold =0;
+	char sentFlag=FALSE;
+	while(!sentenceReady)
+	{
+		if(RC1FLAG == 1)
+		{
+			hold = RC1BUFF;
+			printf("%s",buffer);
+			if(hold == '$')
+			{
+				insert = 0;
+			}//eo if
+			if(hold == '^')
+			{
+				sentenceReady = TRUE;
+				sentFlag==TRUE;
+			}//eo if
+			buffer[insert]=hold;
+			insert++;
+			if(sentFlag==TRUE)
+			{
+			  validateSentence(buffer);
+			}//eo if
+		}//eo if
+	}//eo while
+}//eo receiveSentence::
+
+#pragma interrupt ISR
+void ISR()
+{
+	if(RC1FLAG)
+	{
+		receiveSentence(buffer);
+	}//eo if
+	INTCON|=0xC0;
+}
+
+
+/*>>> MAIN: FUNCTION >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>*/
+void main( void )
+{
+	initializeSystem();
+	initializeGameSystem();
+	while(resetPressFlag!=1)
+	{
+		if(T0FLAG)
+		{	
+			resetTimerConfiguration(T01SEC);
+			gameTimerCheck();
+			playerTurnTimer();
+ 			updateDisplay();
+			userInputDisplay();
+			winPlayer1Conditioncheck();	
+			winPlayer2Conditioncheck();
+
+			if(validateSentence(buffer))
+			{
+				parseSentence(buffer);
+				executeSentence();
+			}//eo if
+			
+		}//eo if
+	}//eo while
+}// eo main::
+
+
+
